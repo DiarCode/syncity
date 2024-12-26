@@ -1,0 +1,29 @@
+{
+    "model": "RandomForestRegressor",
+    "timestamp": "20241217_195858",
+    "features": [
+        "hour",
+        "day_of_week",
+        "net_passenger_change",
+        "enter_sum_lag1",
+        "exit_sum_lag1",
+        "tickets_lag1",
+        "enter_rolling_mean_3",
+        "exit_rolling_mean_3",
+        "tickets_rolling_mean_3",
+        "route_number",
+        "bus_stop_id",
+        "bus_id"
+    ],
+    "target": "enter_sum",
+    "n_estimators": 100,
+    "random_state": 42,
+    "train_dates": [
+        "2024-12-07",
+        "2024-12-08"
+    ],
+    "test_date": "2024-12-09",
+    "MAE": 1.1004518072289156,
+    "RMSE": 1.5907974244960081,
+    "MAPE": 44.69421793569196
+}
