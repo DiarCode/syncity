@@ -1,0 +1,45 @@
+{
+    "model": "GradientBoostingRegressor",
+    "timestamp": "20250128_171054",
+    "features": [
+        "bus_stop_id",
+        "bus_id",
+        "hour",
+        "day_of_week",
+        "enter_sum",
+        "exit_sum",
+        "net_flow",
+        "enter_sum_lag1",
+        "exit_sum_lag1",
+        "tickets_lag1",
+        "enter_rolling_mean_3",
+        "exit_rolling_mean_3",
+        "tickets_rolling_mean_3",
+        "is_weekend",
+        "is_peak_hour",
+        "rolling_tickets_5min"
+    ],
+    "important_features": [
+        "enter_sum",
+        "net_flow",
+        "enter_sum_lag1",
+        "rolling_tickets_5min"
+    ],
+    "target": "net_passenger_change",
+    "MAE": 0.16947394771480387,
+    "RMSE": 0.7790178190549185,
+    "MAPE": 2.2058296595797287,
+    "SMAPE": 2.2176526288868477,
+    "R2": 0.953383038629126,
+    "best_params": {
+        "learning_rate": 0.1,
+        "max_depth": 4,
+        "max_features": 0.5,
+        "min_samples_leaf": 10,
+        "min_samples_split": 20,
+        "n_estimators": 200,
+        "n_iter_no_change": 10,
+        "subsample": 0.7,
+        "validation_fraction": 0.1
+    }
+}

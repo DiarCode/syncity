@@ -1,0 +1,40 @@
+{
+    "model": "XGBRegressor",
+    "timestamp": "20250121_013457",
+    "features": [
+        "bus_stop_id",
+        "bus_id",
+        "hour",
+        "day_of_week",
+        "enter_sum",
+        "exit_sum",
+        "net_flow",
+        "enter_sum_lag1",
+        "exit_sum_lag1",
+        "tickets_lag1",
+        "enter_rolling_mean_3",
+        "exit_rolling_mean_3",
+        "tickets_rolling_mean_3",
+        "is_weekend",
+        "is_peak_hour",
+        "rolling_tickets_5min"
+    ],
+    "target": "net_passenger_change",
+    "train_dates": [
+        "2024-12-07",
+        "2024-12-08"
+    ],
+    "test_date": "2024-12-09",
+    "best_params": {
+        "subsample": 0.8,
+        "reg_lambda": 10,
+        "reg_alpha": 1,
+        "n_estimators": 500,
+        "max_depth": 5,
+        "learning_rate": 0.05,
+        "colsample_bytree": 1.0
+    },
+    "MAE": 0.07284974982370085,
+    "RMSE": 0.7571113566359002,
+    "MAPE": 0.5024249892641284
+}

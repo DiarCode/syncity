@@ -1,0 +1,48 @@
+{
+    "model": "RandomForestRegressor",
+    "timestamp": "20250121_015423",
+    "features": [
+        "hour",
+        "day_of_week",
+        "net_flow",
+        "enter_sum_lag1",
+        "exit_sum_lag1",
+        "tickets_lag1",
+        "enter_rolling_mean_3",
+        "exit_rolling_mean_3",
+        "tickets_rolling_mean_3",
+        "route_number",
+        "bus_stop_id",
+        "bus_id",
+        "is_weekend",
+        "is_peak_hour",
+        "rolling_tickets_5min"
+    ],
+    "target": "net_passenger_change",
+    "train_dates": [
+        "2024-12-07",
+        "2024-12-08"
+    ],
+    "test_date": "2024-12-09",
+    "best_params": {
+        "max_depth": 10,
+        "max_features": null,
+        "min_samples_leaf": 2,
+        "min_samples_split": 7,
+        "n_estimators": 153
+    },
+    "train_metrics": {
+        "MAE": 0.003769419904980386,
+        "RMSE": 0.04338349661621513,
+        "MAPE": 0.0228572374843239,
+        "SMAPE": 0.02308037343851723,
+        "R2": 0.9998017434984955
+    },
+    "test_metrics": {
+        "MAE": 0.05102937837670787,
+        "RMSE": 0.5321894142873246,
+        "MAPE": 0.2199955580119522,
+        "SMAPE": 0.24807265347118976,
+        "R2": 0.9771245490292916
+    }
+}

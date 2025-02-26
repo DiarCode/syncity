@@ -1,0 +1,102 @@
+{
+    "model": "RandomForestRegressor",
+    "timestamp": "20250121_015711",
+    "features": [
+        "hour",
+        "day_of_week",
+        "net_flow",
+        "enter_sum_lag1",
+        "exit_sum_lag1",
+        "tickets_lag1",
+        "enter_rolling_mean_3",
+        "exit_rolling_mean_3",
+        "tickets_rolling_mean_3",
+        "route_number",
+        "bus_stop_id",
+        "bus_id",
+        "is_weekend",
+        "is_peak_hour",
+        "rolling_tickets_5min"
+    ],
+    "target": "net_passenger_change",
+    "train_dates": [
+        "2024-12-07",
+        "2024-12-08"
+    ],
+    "test_date": "2024-12-09",
+    "best_params": {
+        "max_depth": 11,
+        "max_features": null,
+        "min_samples_leaf": 2,
+        "min_samples_split": 8,
+        "n_estimators": 195
+    },
+    "test_metrics": {
+        "MAE": 0.05304451318995077,
+        "RMSE": 0.5445234651988559,
+        "MAPE": 0.23107245268604945,
+        "R2": 0.9760519365492143
+    },
+    "feature_importance": [
+        {
+            "Feature": "net_flow",
+            "Importance": 0.9999858210416727
+        },
+        {
+            "Feature": "enter_sum_lag1",
+            "Importance": 5.946305197563757e-06
+        },
+        {
+            "Feature": "tickets_lag1",
+            "Importance": 5.390232437557337e-06
+        },
+        {
+            "Feature": "enter_rolling_mean_3",
+            "Importance": 1.0201330013076904e-06
+        },
+        {
+            "Feature": "exit_sum_lag1",
+            "Importance": 6.538786686858072e-07
+        },
+        {
+            "Feature": "exit_rolling_mean_3",
+            "Importance": 5.719381349694274e-07
+        },
+        {
+            "Feature": "rolling_tickets_5min",
+            "Importance": 2.691865126974494e-07
+        },
+        {
+            "Feature": "bus_id",
+            "Importance": 1.6512462800835608e-07
+        },
+        {
+            "Feature": "hour",
+            "Importance": 1.6215974029292938e-07
+        },
+        {
+            "Feature": "bus_stop_id",
+            "Importance": 4.037782671033859e-15
+        },
+        {
+            "Feature": "tickets_rolling_mean_3",
+            "Importance": 1.1724928462270135e-15
+        },
+        {
+            "Feature": "route_number",
+            "Importance": 6.633279158979525e-16
+        },
+        {
+            "Feature": "day_of_week",
+            "Importance": 1.9324661738767817e-16
+        },
+        {
+            "Feature": "is_peak_hour",
+            "Importance": 1.0781750369674506e-16
+        },
+        {
+            "Feature": "is_weekend",
+            "Importance": 0.0
+        }
+    ]
+}

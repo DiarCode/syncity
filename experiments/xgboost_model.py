@@ -5,59 +5,52 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import (make_scorer, mean_absolute_error,
-                             mean_squared_error)
+from sklearn.metrics import make_scorer, mean_absolute_error, mean_squared_error
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from xgboost import XGBRegressor
 
-# Load prepared dataset
-df = pd.read_csv('./data/passflow_prepared.csv')
+# Load the enhanced data
+data = pd.read_csv("./data/passflow_enhanced.csv")
+data["bus_board_computer_sent_time"] = pd.to_datetime(
+    data["bus_board_computer_sent_time"], errors="coerce")
+data = data.dropna(subset=["bus_board_computer_sent_time"])
+data = data.sort_values("bus_board_computer_sent_time")
+data = data[data["net_passenger_change"] > 0]  # Filter positive targets
 
-# Convert to datetime
-df['bus_board_computer_sent_time'] = pd.to_datetime(
-    df['bus_board_computer_sent_time'], errors='coerce')
-if not np.issubdtype(df['bus_board_computer_sent_time'].dtype, np.datetime64):
-    raise ValueError(
-        "Column 'bus_board_computer_sent_time' is not datetime after conversion.")
-
-# Define features & target
-target_col = 'enter_sum'
-feature_cols = [
-    'hour', 'day_of_week', 'net_passenger_change',
-    'enter_sum_lag1', 'exit_sum_lag1', 'tickets_lag1',
-    'enter_rolling_mean_3', 'exit_rolling_mean_3', 'tickets_rolling_mean_3',
-    'route_number', 'bus_stop_id', 'bus_id'
+# Define features and target
+features = [
+    "bus_stop_id", "bus_id", "hour", "day_of_week", "enter_sum", "exit_sum",
+    "net_flow", "enter_sum_lag1", "exit_sum_lag1", "tickets_lag1",
+    "enter_rolling_mean_3", "exit_rolling_mean_3", "tickets_rolling_mean_3",
+    "is_weekend", "is_peak_hour", "rolling_tickets_5min"
 ]
+target = "net_passenger_change"
 
-# Sort by time and split
-df = df.sort_values('bus_board_computer_sent_time')
-unique_dates = df['bus_board_computer_sent_time'].dt.date.unique()
+X = data[features]
+y = np.log1p(data[target])  # Log-transform target
+
+# Time-based split
+unique_dates = data["bus_board_computer_sent_time"].dt.date.unique()
 if len(unique_dates) < 2:
-    raise ValueError(f"Not enough unique dates. Found: {unique_dates}")
+    raise ValueError("Not enough unique dates.")
 
 train_dates = unique_dates[:-1]
 test_date = unique_dates[-1]
 
-train_df = df[df['bus_board_computer_sent_time'].dt.date.isin(train_dates)]
-test_df = df[df['bus_board_computer_sent_time'].dt.date == test_date]
+train_mask = data["bus_board_computer_sent_time"].dt.date.isin(train_dates)
+test_mask = data["bus_board_computer_sent_time"].dt.date == test_date
 
-if test_df.empty:
-    # Fallback: last 20% as test
-    split_idx = int(len(df) * 0.8)
-    train_df = df.iloc[:split_idx]
-    test_df = df.iloc[split_idx:]
+if test_mask.sum() == 0:
+    # Fallback: use last 20% as test
+    split_idx = int(len(X) * 0.8)
+    X_train, y_train = X.iloc[:split_idx], y.iloc[:split_idx]
+    X_test, y_test = X.iloc[split_idx:], y.iloc[split_idx:]
     print("No test data found for the last date. Using last 20% of data as test set.")
+else:
+    X_train, y_train = X[train_mask], y[train_mask]
+    X_test, y_test = X[test_mask], y[test_mask]
 
-X_train = train_df[feature_cols]
-y_train = train_df[target_col]
-X_test = test_df[feature_cols]
-y_test = test_df[target_col]
-
-if X_test.empty:
-    raise ValueError(
-        "Test set is empty after fallback. Please revise data splitting logic.")
-
-# Define a MAPE scorer
+# Define MAPE scorer
 
 
 def mape_scorer(y_true, y_pred):
@@ -104,33 +97,38 @@ print("Best CV score (MAPE):", -search.best_score_)
 best_xgb_model = search.best_estimator_
 best_xgb_model.fit(X_train, y_train)
 
+# Predictions
 y_pred = best_xgb_model.predict(X_test)
-mae = mean_absolute_error(y_test, y_pred)
-mse = mean_squared_error(y_test, y_pred)
+y_test_inv = np.expm1(y_test)  # Invert log transform
+y_pred_inv = np.expm1(y_pred)
+
+# Evaluate
+mae = mean_absolute_error(y_test_inv, y_pred_inv)
+mse = mean_squared_error(y_test_inv, y_pred_inv)
 rmse = np.sqrt(mse)
-mask = y_test != 0
-if mask.sum() == 0:
-    mape = np.nan
-else:
-    mape = np.mean(np.abs((y_test[mask] - y_pred[mask]) / y_test[mask])) * 100
+mask = y_test_inv != 0
+mape = np.mean(np.abs((y_test_inv[mask] - y_pred_inv[mask]) /
+               y_test_inv[mask])) * 100 if mask.sum() > 0 else np.nan
 
 print("Optimized XGB MAE:", mae)
 print("Optimized XGB RMSE:", rmse)
-print("Optimized XGB MAPE: {:.2f}%".format(mape)
-      if not np.isnan(mape) else "MAPE not available")
+if not np.isnan(mape):
+    print(f"Optimized XGB MAPE: {mape:.2f}%")
+else:
+    print("MAPE not available due to zero values in target.")
 
 # Save model and results
-timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-os.makedirs('./models', exist_ok=True)
-model_filename = f'./models/xgb_{timestamp}.pkl'
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+os.makedirs("./models", exist_ok=True)
+model_filename = f"./models/xgb_{timestamp}.pkl"
 with open(model_filename, 'wb') as f:
     pickle.dump(best_xgb_model, f)
 
 results = {
     'model': 'XGBRegressor',
     'timestamp': timestamp,
-    'features': feature_cols,
-    'target': target_col,
+    'features': features,
+    'target': target,
     'train_dates': [str(d) for d in train_dates],
     'test_date': str(test_date),
     'best_params': search.best_params_,
@@ -139,16 +137,16 @@ results = {
     'MAPE': mape if not np.isnan(mape) else None
 }
 
-os.makedirs('./results', exist_ok=True)
-results_filename = f'./results/xgb_results_{timestamp}.json'
+os.makedirs("./results", exist_ok=True)
+results_filename = f"./results/xgb_results_{timestamp}.json"
 with open(results_filename, 'w') as f:
     json.dump(results, f, indent=4)
 
 print(f"Model saved to {model_filename}")
 print(f"Results saved to {results_filename}")
 
-# Logging the run
-log_filename = './results/training_log.csv'
+# Log the run
+log_filename = "./results/training_log.csv"
 log_entry = pd.DataFrame([{
     'timestamp': timestamp,
     'model': 'XGBRegressor',
@@ -163,7 +161,6 @@ log_entry = pd.DataFrame([{
 if not os.path.exists(log_filename):
     log_entry.to_csv(log_filename, index=False)
 else:
-    log_entry.to_csv(log_filename, mode='a', header=False, index=False)
+    log_entry.to_csv(log_filename, mode="a", header=False, index=False)
 
-print(f"Run logged in {log_filename}")
 print(f"Run logged in {log_filename}")

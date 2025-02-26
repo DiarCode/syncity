@@ -6,48 +6,62 @@ from datetime import datetime
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
-from sklearn.metrics import (make_scorer, mean_absolute_error,
-                             mean_squared_error)
+from sklearn.metrics import make_scorer, mean_absolute_error, mean_squared_error
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 
-# Load prepared dataset and do same steps as before
-df = pd.read_csv('./data/passflow_prepared.csv')
-df['bus_board_computer_sent_time'] = pd.to_datetime(
-    df['bus_board_computer_sent_time'], errors='coerce')
-if not np.issubdtype(df['bus_board_computer_sent_time'].dtype, np.datetime64):
-    raise ValueError("Column 'bus_board_computer_sent_time' is not datetime.")
+# Load the enhanced data
+data = pd.read_csv("./data/passflow_enhanced.csv")
 
-target_col = 'enter_sum'
-feature_cols = [
-    'hour', 'day_of_week', 'net_passenger_change',
-    'enter_sum_lag1', 'exit_sum_lag1', 'tickets_lag1',
-    'enter_rolling_mean_3', 'exit_rolling_mean_3', 'tickets_rolling_mean_3',
-    'route_number', 'bus_stop_id', 'bus_id'
+# Filter out invalid target values
+# Keep only positive target values
+data = data[data["net_passenger_change"] > 0]
+
+# Define features and target
+features = [
+    "bus_stop_id", "bus_id", "hour", "day_of_week", "enter_sum", "exit_sum",
+    "net_flow", "enter_sum_lag1", "exit_sum_lag1", "tickets_lag1",
+    "enter_rolling_mean_3", "exit_rolling_mean_3", "tickets_rolling_mean_3",
+    "is_weekend", "is_peak_hour", "rolling_tickets_5min"
 ]
+target = "net_passenger_change"
 
-df = df.sort_values('bus_board_computer_sent_time')
-unique_dates = df['bus_board_computer_sent_time'].dt.date.unique()
+# Log-transform the target
+data[target] = np.log1p(data[target])
+
+# Sort by time for time-based split
+data = data.sort_values("bus_board_computer_sent_time")
+
+# Identify unique dates
+unique_dates = pd.to_datetime(
+    data["bus_board_computer_sent_time"]).dt.date.unique()
 if len(unique_dates) < 2:
-    raise ValueError(f"Not enough unique dates. Found: {unique_dates}")
+    raise ValueError("Not enough unique dates to split.")
 
+# Split into training and testing
 train_dates = unique_dates[:-1]
 test_date = unique_dates[-1]
 
-train_df = df[df['bus_board_computer_sent_time'].dt.date.isin(train_dates)]
-test_df = df[df['bus_board_computer_sent_time'].dt.date == test_date]
+train_df = data[pd.to_datetime(
+    data["bus_board_computer_sent_time"]).dt.date.isin(train_dates)]
+test_df = data[pd.to_datetime(
+    data["bus_board_computer_sent_time"]).dt.date == test_date]
 
 if test_df.empty:
-    split_idx = int(len(df)*0.8)
-    train_df = df.iloc[:split_idx]
-    test_df = df.iloc[split_idx:]
-    print("No test data found for the last date. Using last 20% of data as test set.")
+    split_idx = int(len(data) * 0.8)
+    train_df = data.iloc[:split_idx]
+    test_df = data.iloc[split_idx:]
+    print("Fallback: Using last 20% of data as test set.")
 
-X_train = train_df[feature_cols]
-y_train = train_df[target_col]
-X_test = test_df[feature_cols]
-y_test = test_df[target_col]
+X_train = train_df[features]
+y_train = train_df[target]
+
+X_test = test_df[features]
+y_test = test_df[target]
+
 if X_test.empty:
     raise ValueError("Test set is empty after fallback.")
+
+# Define MAPE scorer
 
 
 def mape_scorer(y_true, y_pred):
@@ -58,7 +72,6 @@ def mape_scorer(y_true, y_pred):
 
 
 mape_scorer_custom = make_scorer(mape_scorer, greater_is_better=False)
-tscv = TimeSeriesSplit(n_splits=3)
 
 # Hyperparameter space for LightGBM
 param_distributions = {
@@ -75,6 +88,10 @@ param_distributions = {
 
 lgbm_model = lgb.LGBMRegressor(random_state=42)
 
+# Time-series split
+tscv = TimeSeriesSplit(n_splits=3)
+
+# Hyperparameter tuning
 search = RandomizedSearchCV(
     lgbm_model,
     param_distributions=param_distributions,
@@ -88,28 +105,29 @@ search = RandomizedSearchCV(
 
 search.fit(X_train, y_train)
 
-print("Best parameters found:", search.best_params_)
-print("Best CV score (MAPE):", -search.best_score_)
-
-# Retrain best model
+# Best parameters and retraining
+best_params = search.best_params_
 best_lgb_model = search.best_estimator_
 best_lgb_model.fit(X_train, y_train)
 
-y_pred = best_lgb_model.predict(X_test)
-mae = mean_absolute_error(y_test, y_pred)
-mse = mean_squared_error(y_test, y_pred)
-rmse = np.sqrt(mse)
-mask = y_test != 0
-if mask.sum() == 0:
-    mape = np.nan
-else:
-    mape = np.mean(np.abs((y_test[mask] - y_pred[mask]) / y_test[mask])) * 100
+# Predictions
+y_pred = np.expm1(best_lgb_model.predict(X_test))
+y_test_actual = np.expm1(y_test)
 
-print("Optimized LGBM MAE:", mae)
-print("Optimized LGBM RMSE:", rmse)
-if not np.isnan(mape):
-    print("Optimized LGBM MAPE: {:.2f}%".format(mape))
+# Metrics
+mae = mean_absolute_error(y_test_actual, y_pred)
+rmse = np.sqrt(mean_squared_error(y_test_actual, y_pred))
+mask = y_test_actual != 0
+mape = np.mean(np.abs((y_test_actual[mask] - y_pred[mask]) /
+               y_test_actual[mask])) * 100 if mask.sum() > 0 else np.nan
 
+# Print results
+print("Best parameters found:", best_params)
+print(f"Optimized LGBM MAE: {mae:.2f}")
+print(f"Optimized LGBM RMSE: {rmse:.2f}")
+print(f"Optimized LGBM MAPE: {mape:.2f}%")
+
+# Save model and results
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 os.makedirs('./models', exist_ok=True)
 model_filename = f'./models/lgbm_{timestamp}.pkl'
@@ -119,11 +137,11 @@ with open(model_filename, 'wb') as f:
 results = {
     'model': 'LGBMRegressor',
     'timestamp': timestamp,
-    'features': feature_cols,
-    'target': target_col,
+    'features': features,
+    'target': target,
     'train_dates': [str(d) for d in train_dates],
     'test_date': str(test_date),
-    'best_params': search.best_params_,
+    'best_params': best_params,
     'MAE': mae,
     'RMSE': rmse,
     'MAPE': mape if not np.isnan(mape) else None
@@ -137,6 +155,7 @@ with open(results_filename, 'w') as f:
 print(f"Model saved to {model_filename}")
 print(f"Results saved to {results_filename}")
 
+# Log the run
 log_filename = './results/training_log.csv'
 log_entry = pd.DataFrame([{
     'timestamp': timestamp,
@@ -146,7 +165,7 @@ log_entry = pd.DataFrame([{
     'MAPE': mape if not np.isnan(mape) else None,
     'train_dates': ';'.join([str(d) for d in train_dates]),
     'test_date': str(test_date),
-    'best_params': str(search.best_params_)
+    'best_params': str(best_params)
 }])
 
 if not os.path.exists(log_filename):

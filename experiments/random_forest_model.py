@@ -5,57 +5,41 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from scipy.stats import randint, uniform
+from scipy.stats import randint 
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import (make_scorer, mean_absolute_error,
-                             mean_squared_error)
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 
-# Load prepared dataset
-df = pd.read_csv('./data/passflow_prepared.csv')
+# Load the enhanced dataset
+data = pd.read_csv("./data/passflow_enhanced.csv")
 
-# Convert to datetime
-df['bus_board_computer_sent_time'] = pd.to_datetime(
-    df['bus_board_computer_sent_time'], errors='coerce')
+# Convert time columns
+data["bus_board_computer_sent_time"] = pd.to_datetime(
+    data["bus_board_computer_sent_time"])
 
-# Verify datetime
-if not np.issubdtype(df['bus_board_computer_sent_time'].dtype, np.datetime64):
-    raise ValueError(
-        "Column 'bus_board_computer_sent_time' is not datetime after conversion.")
+# Filter positive target values
+data = data[data["net_passenger_change"] > 0]
 
-# Define features & target
-target_col = 'enter_sum'
+# Define features and target
+target_col = "net_passenger_change"
 feature_cols = [
-    'hour', 'day_of_week', 'net_passenger_change',
-    'enter_sum_lag1', 'exit_sum_lag1', 'tickets_lag1',
-    'enter_rolling_mean_3', 'exit_rolling_mean_3', 'tickets_rolling_mean_3',
-    'route_number', 'bus_stop_id', 'bus_id'
+    "hour", "day_of_week", "net_flow", "enter_sum_lag1", "exit_sum_lag1", "tickets_lag1",
+    "enter_rolling_mean_3", "exit_rolling_mean_3", "tickets_rolling_mean_3",
+    "route_number", "bus_stop_id", "bus_id", "is_weekend", "is_peak_hour", "rolling_tickets_5min"
 ]
 
-# Sort by time
-df = df.sort_values('bus_board_computer_sent_time')
+# Log-transform the target
+data[target_col] = np.log1p(data[target_col])
 
-# Identify unique dates
-unique_dates = df['bus_board_computer_sent_time'].dt.date.unique()
-print("Unique Dates in Data:", unique_dates)
+# Time-based split
+data = data.sort_values("bus_board_computer_sent_time")
+unique_dates = data["bus_board_computer_sent_time"].dt.date.unique()
 
-if len(unique_dates) < 2:
-    raise ValueError(
-        f"Not enough unique dates to perform time-based train/test split. Found: {unique_dates}")
-
-# Use all but the last date as training, last date as test
 train_dates = unique_dates[:-1]
 test_date = unique_dates[-1]
 
-train_df = df[df['bus_board_computer_sent_time'].dt.date.isin(train_dates)]
-test_df = df[df['bus_board_computer_sent_time'].dt.date == test_date]
-
-# If test set is empty, fallback to using the last portion of data as test set
-if test_df.empty:
-    split_idx = int(len(df) * 0.8)
-    train_df = df.iloc[:split_idx]
-    test_df = df.iloc[split_idx:]
-    print("No test data found for the last date. Using last 20% of data as test set.")
+train_df = data[data["bus_board_computer_sent_time"].dt.date.isin(train_dates)]
+test_df = data[data["bus_board_computer_sent_time"].dt.date == test_date]
 
 X_train = train_df[feature_cols]
 y_train = train_df[target_col]
@@ -63,71 +47,85 @@ y_train = train_df[target_col]
 X_test = test_df[feature_cols]
 y_test = test_df[target_col]
 
-if X_test.empty:
-    raise ValueError(
-        "Test set is empty after fallback. Please revise data splitting logic.")
-
-# Use the best parameters found previously
-best_params = {
-    'max_depth': 3,
-    'max_features': None,
-    'min_samples_leaf': 3,
-    'min_samples_split': 18,
-    'n_estimators': 491
+# Updated Hyperparameter Distribution
+param_dist = {
+    "n_estimators": randint(100, 300),  # Reduced upper limit
+    "max_depth": randint(5, 12),       # Prevent deep trees
+    "min_samples_split": randint(5, 20),  # Avoid over-specialization
+    "min_samples_leaf": randint(2, 10),   # Increase minimum leaf size
+    "max_features": ["sqrt", "log2", None]  # Fixed 'auto' issue
 }
 
-# Train model with optimized hyperparameters
-model = RandomForestRegressor(
-    n_estimators=best_params['n_estimators'],
-    max_depth=best_params['max_depth'],
-    max_features=best_params['max_features'],
-    min_samples_leaf=best_params['min_samples_leaf'],
-    min_samples_split=best_params['min_samples_split'],
-    random_state=42
+# Initialize Random Forest Regressor
+rf = RandomForestRegressor(random_state=42)
+
+# Cross-Validation with RandomizedSearchCV
+search = RandomizedSearchCV(
+    rf, param_distributions=param_dist, n_iter=50,
+    scoring="neg_mean_squared_error", cv=TimeSeriesSplit(n_splits=3),
+    random_state=42, n_jobs=-1, verbose=1
 )
-model.fit(X_train, y_train)
+search.fit(X_train, y_train)
 
-# Predict on test set
-y_pred = model.predict(X_test)
+# Best model and parameters
+best_model = search.best_estimator_
+best_params = search.best_params_
 
-# Evaluate - MAE, RMSE
-mae = mean_absolute_error(y_test, y_pred)
-mse = mean_squared_error(y_test, y_pred)
-rmse = np.sqrt(mse)
+# Train with best parameters
+best_model.fit(X_train, y_train)
 
-# Calculate MAPE
-mask = y_test != 0
-if mask.sum() == 0:
-    print("No non-zero values in y_test. Cannot compute MAPE.")
-    mape = np.nan
-else:
-    mape = np.mean(np.abs((y_test[mask] - y_pred[mask]) / y_test[mask])) * 100
+# Predictions
+y_pred = np.expm1(best_model.predict(X_test))
+y_test_actual = np.expm1(y_test)
 
-print("Test MAE:", mae)
-print("Test RMSE:", rmse)
-if not np.isnan(mape):
-    print("Test MAPE: {:.2f}%".format(mape))
-else:
-    print("MAPE could not be calculated due to zero values in the target.")
+# Metrics calculation
+epsilon = 1e-8  # Small constant to avoid division by zero
+mae = mean_absolute_error(y_test_actual, y_pred)
+rmse = np.sqrt(mean_squared_error(y_test_actual, y_pred))
+mape = np.mean(np.abs((y_test_actual - y_pred) /
+               np.maximum(np.abs(y_test_actual), epsilon))) * 100
+r2 = r2_score(y_test_actual, y_pred)
+
+# Feature Importance
+importances = best_model.feature_importances_
+feature_importance = pd.DataFrame({
+    "Feature": feature_cols,
+    "Importance": importances
+}).sort_values(by="Importance", ascending=False)
+
+print("----- Feature Importance -----")
+print(feature_importance)
+
+# Print metrics
+print("----- Model Metrics -----")
+print(f"Best Parameters: {best_params}")
+print(f"Test MAE: {mae:.2f}")
+print(f"Test RMSE: {rmse:.2f}")
+print(f"Test MAPE: {mape:.2f}%")
+print(f"R^2 Score: {r2:.2f}")
 
 # Save model and results
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 os.makedirs('./models', exist_ok=True)
 model_filename = f'./models/random_forest_{timestamp}.pkl'
 with open(model_filename, 'wb') as f:
-    pickle.dump(model, f)
+    pickle.dump(best_model, f)
 
 results = {
-    'model': 'RandomForestRegressor',
-    'timestamp': timestamp,
-    'features': feature_cols,
-    'target': target_col,
-    'train_dates': [str(d) for d in train_dates],
-    'test_date': str(test_date),
-    'best_params': best_params,
-    'MAE': mae,
-    'RMSE': rmse,
-    'MAPE': mape if not np.isnan(mape) else None
+    "model": "RandomForestRegressor",
+    "timestamp": timestamp,
+    "features": feature_cols,
+    "target": target_col,
+    "train_dates": [str(d) for d in train_dates],
+    "test_date": str(test_date),
+    "best_params": best_params,
+    "test_metrics": {
+        "MAE": mae,
+        "RMSE": rmse,
+        "MAPE": mape,
+        "R2": r2
+    },
+    "feature_importance": feature_importance.to_dict(orient="records")
 }
 
 os.makedirs('./results', exist_ok=True)
@@ -137,23 +135,3 @@ with open(results_filename, 'w') as f:
 
 print(f"Model saved to {model_filename}")
 print(f"Results saved to {results_filename}")
-
-# Log run
-log_filename = './results/training_log.csv'
-log_entry = pd.DataFrame([{
-    'timestamp': timestamp,
-    'model': 'RandomForestRegressor',
-    'MAE': mae,
-    'RMSE': rmse,
-    'MAPE': mape if not np.isnan(mape) else None,
-    'train_dates': ';'.join([str(d) for d in train_dates]),
-    'test_date': str(test_date),
-    'best_params': str(best_params)
-}])
-
-if not os.path.exists(log_filename):
-    log_entry.to_csv(log_filename, index=False)
-else:
-    log_entry.to_csv(log_filename, mode='a', header=False, index=False)
-
-print(f"Run logged in {log_filename}")

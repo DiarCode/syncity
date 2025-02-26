@@ -1,0 +1,12 @@
+{
+    "model": "LSTM",
+    "timestamp": "20250121_013236",
+    "window_size": 24,
+    "best_params": {
+        "units": 192,
+        "learning_rate": 0.001
+    },
+    "MAE": 4.885182787258423,
+    "RMSE": 5.36900128664688,
+    "MAPE": 312.32066305436734
+}

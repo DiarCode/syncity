@@ -1,0 +1,28 @@
+{
+    "model": "LinearRegression",
+    "timestamp": "20250128_164433",
+    "features": [
+        "bus_stop_id",
+        "bus_id",
+        "hour",
+        "day_of_week",
+        "enter_sum",
+        "exit_sum",
+        "net_flow",
+        "enter_sum_lag1",
+        "exit_sum_lag1",
+        "tickets_lag1",
+        "enter_rolling_mean_3",
+        "exit_rolling_mean_3",
+        "tickets_rolling_mean_3",
+        "is_weekend",
+        "is_peak_hour",
+        "rolling_tickets_5min"
+    ],
+    "target": "net_passenger_change",
+    "MAE": 0.8153756882124875,
+    "RMSE": 2.1362017780358875,
+    "MAPE": 26.59342007813736,
+    "SMAPE": 24.739835844227887,
+    "R2": 0.4192404592413511
+}
